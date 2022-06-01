@@ -13,22 +13,17 @@ model = tf.keras.models.load_model("models/model.h5")
 app = Flask(__name__)
 
 
-@app.route("/", methods=["GET"])
+@app.route("/", methods=["POST"])
 def index():
-    return "Welcome to the API", 200
-
-
-@app.route("/predict", methods=["POST"])
-def predict():
     image = Image.open(request.files["image"].stream)
     image = image.resize((224, 224))
-    imgarr = np.asarray(image)
-    imgarr = np.reshape(imgarr, (224, 224, 3))
-    imgarr = np.expand_dims(imgarr, axis=0)
+    x = np.asarray(image)
+    x = np.reshape(x, (224, 224, 3))
+    x = np.expand_dims(x, axis=0)
 
-    x = model.predict(imgarr)
+    y = model.predict(x)
 
-    return f"{np.argmax(x[0])}"
+    return f"{np.argmax(y[0])}", 200
 
 
 if __name__ == "__main__":

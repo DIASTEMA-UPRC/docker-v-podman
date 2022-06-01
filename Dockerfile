@@ -1,15 +1,13 @@
-FROM ubuntu:20.04
+FROM python:3.8
 
 EXPOSE 5000
 
 RUN apt update -y
 RUN apt upgrade -y
-RUN apt install -y python3 python3-pip python-is-python3
 RUN pip install -U pip
 RUN pip install gunicorn
 
 WORKDIR /app
-RUN mkdir -p ./models
 
 ADD requirements.txt .
 ADD app.py .
