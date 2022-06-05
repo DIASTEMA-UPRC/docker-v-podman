@@ -8,6 +8,7 @@ RUN pip install -U pip
 RUN pip install gunicorn
 
 WORKDIR /app
+RUN mkdir -p ./models
 
 ADD requirements.txt .
 ADD app.py .

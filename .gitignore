@@ -1,5 +1,9 @@
 # Python
 .venv/
+__pycache__/
 
-# Data
-*csv
+# Output
+results/
+
+# Visual Studio Code
+.vscode/

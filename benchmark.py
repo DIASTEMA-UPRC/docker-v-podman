@@ -1,77 +1,138 @@
 import requests
 import pandas as pd
+import argparse
+import socket
+import os
+import datetime
 
-from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, wait
+from typing import List
+from uuid import uuid4
 
 
-DOCKER_TEST_HOST = "0.0.0.0"
-DOCKER_TEST_PORT = 5000
-PODMAN_TEST_HOST = DOCKER_TEST_HOST
-PODMAN_TEST_PORT = 5001
-TEST_IMAGE_PATH = "data/test.jpg"
+TEST_IMAGE_PATH = "data/image.jpg"
 TEST_IMAGE = open(TEST_IMAGE_PATH, "rb")
-N_MAX_REQUESTS = 50
+MAX_REQUESTS = 1000
 
 
-def docker_predict() -> requests.Response:
-    res = requests.post(f"http://{DOCKER_TEST_HOST}:{DOCKER_TEST_PORT}/predict", files=dict(image=open(TEST_IMAGE_PATH, "rb")))
-    return res
+def post(ip: str, port: int=5000) -> requests.Response:
+    return requests.post(
+        f"http://{ip}:{port}/", files=dict(image=open(TEST_IMAGE_PATH, "rb"))
+    )
 
 
-def podman_predict() -> requests.Response:
-    res = requests.post(f"http://{PODMAN_TEST_HOST}:{PODMAN_TEST_PORT}/predict", files=dict(image=open(TEST_IMAGE_PATH, "rb")))
-    return res
+def benchmark_request(ip: str, port: int=5000) -> float:
+    res = post(ip, port)
+    return res.elapsed.microseconds * 1000
 
 
-def test_docker_single_request():
-    res = docker_predict()
-    return res.elapsed.microseconds / 100
+def benchmark_sequential_requests(ips: List[str], port: int=5000) -> pd.DataFrame:
+    def _sequential_loop(ip: str, port: int=5000) -> pd.Series:
+        ns = list()
 
+        for _ in range(MAX_REQUESTS):
+            ns.append(benchmark_request(ip, port))
 
-def test_podman_single_request():
-    res = podman_predict()
-    return res.elapsed.microseconds / 100
+        return pd.Series(ns, name=ip)
 
-
-def test_seq_requests():
-    docker_ms = list()
-    podman_ms = list()
-
-    for _ in tqdm(range(N_MAX_REQUESTS), desc="Sequential requests"):
-        docker_ms.append(test_docker_single_request())
-        podman_ms.append(test_podman_single_request())
 
     df = pd.DataFrame()
-    df["docker_elapsed_ms"] = docker_ms
-    df["podman_elapsed_ms"] = podman_ms
-    df.to_csv("data/seq.csv", index_label="request")
 
+    with ThreadPoolExecutor() as p:
+        futures = list()
 
-def test_sim_requests():
-    docker_ms = list()
-    podman_ms = list()
+        for ip in ips:
+            futures.append(p.submit(_sequential_loop, ip=ip, port=port))
 
-    with ThreadPoolExecutor(max_workers=N_MAX_REQUESTS) as p:
-        # Docker
-        futures = [p.submit(test_docker_single_request) for _ in range(N_MAX_REQUESTS)]
         wait(futures)
-        docker_ms = [x.result() for x in futures]
+        results = [x.result() for x in futures]
 
-        print("Docker sim done")
+        for i, r in enumerate(results):
+            if i == 0:
+                df = r.to_frame()
+            else:
+                df = df.join(r)
 
-        # Podman
-        futures = [p.submit(test_podman_single_request) for _ in range(N_MAX_REQUESTS)]
-        wait(futures)
-        podman_ms = [x.result() for x in futures]
+    return df
 
-        print("Podman sim done")
+
+def benchmark_simultaneous_requests(ips: List[str], port: int=5000) -> pd.DataFrame:
+    def _simultaneous_loop(ip: str, port: int=5000) -> pd.Series:
+        ns = list()
+
+        with ThreadPoolExecutor(max_workers=MAX_REQUESTS // 10) as p:
+            futures = list()
+
+            for _ in range(MAX_REQUESTS):
+                futures.append(p.submit(benchmark_request, ip=ip, port=port))
+
+            wait(futures)
+            ns = [x.result() for x in futures]
+
+        return pd.Series(ns, name=ip)
+
 
     df = pd.DataFrame()
-    df["docker_elapsed_ms"] = docker_ms
-    df["podman_elapsed_ms"] = podman_ms
-    df.to_csv("data/sim.csv", index_label="request")
+
+    with ThreadPoolExecutor() as p:
+        futures = list()
+
+        for ip in ips:
+            futures.append(p.submit(_simultaneous_loop, ip=ip, port=port))
+
+        wait(futures)
+        results = [x.result() for x in futures]
+
+        for i, r in enumerate(results):
+            if i == 0:
+                df = r.to_frame()
+            else:
+                df = df.join(r)
+
+    return df
 
 
-test_seq_requests()
-test_sim_requests()
+if __name__ == "__main__":
+    def _get_current_datetime() -> str:
+        cdt = datetime.datetime.now()
+        return f"{cdt.year}{cdt.month}{cdt.day}{cdt.hour}{cdt.minute}{cdt.second}"
+
+    def _get_file_id() -> str:
+        return f"{_get_current_datetime()}_{uuid4().hex}"
+
+    parser = argparse.ArgumentParser(description="Benchmark image classification APIs")
+    parser.add_argument("-i", metavar="192.168.1.2", type=str, required=True, help="IP addresses to benchmark")
+    parser.add_argument("-p", metavar=5000, type=int, default=5000, help="Port to use for benchmarking")
+    parser.add_argument("-n", metavar=1000, type=int, default=100, help="Maximum number of requests to perform during a test")
+    parser.add_argument("-o", metavar="directory", type=str, default="results", help="Directory to output results to")
+
+    args = parser.parse_args()
+    ips = args.i.split()
+    port = args.p
+    MAX_REQUESTS = args.n
+    out = args.o
+
+    if not os.path.isdir(out):
+        os.mkdir(out)
+
+    # Print Benchmark info
+    print(f"Benchmarking the following IPs at port {port}:")
+    
+    for ip in ips:
+        try:
+            socket.inet_aton(ip)
+            print("  -", ip)
+        except:
+            print("Illegal IP:", ip)
+            print("Exiting...")
+            exit(1)
+
+    # Test sequentially
+    print("Testing sequentially....")
+    seq = benchmark_sequential_requests(ips)
+    seq.to_csv(os.path.join(out, f"{_get_file_id()}_seq.csv"), index_label="request")
+
+    # Test simultaneously
+    print("Testing simultaneously....")
+    sim = benchmark_simultaneous_requests(ips)
+    sim.to_csv(os.path.join(out, f"{_get_file_id()}_sim.csv"), index_label="request")
