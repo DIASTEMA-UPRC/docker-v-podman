@@ -7,7 +7,6 @@ import datetime
 
 from concurrent.futures import ThreadPoolExecutor, wait
 from typing import List
-from uuid import uuid4
 
 
 TEST_IMAGE_PATH = "data/image.jpg"
@@ -23,7 +22,7 @@ def post(ip: str, port: int=5000) -> requests.Response:
 
 def benchmark_request(ip: str, port: int=5000) -> float:
     res = post(ip, port)
-    return res.elapsed.microseconds * 1000
+    return res.elapsed.microseconds / 1000
 
 
 def benchmark_sequential_requests(ips: List[str], port: int=5000) -> pd.DataFrame:
@@ -97,14 +96,12 @@ if __name__ == "__main__":
         cdt = datetime.datetime.now()
         return f"{cdt.year}{cdt.month}{cdt.day}{cdt.hour}{cdt.minute}{cdt.second}"
 
-    def _get_file_id() -> str:
-        return f"{_get_current_datetime()}_{uuid4().hex}"
 
-    parser = argparse.ArgumentParser(description="Benchmark image classification APIs")
+    parser = argparse.ArgumentParser(description="Benchmark APIs")
     parser.add_argument("-i", metavar="192.168.1.2", type=str, required=True, help="IP addresses to benchmark")
     parser.add_argument("-p", metavar=5000, type=int, default=5000, help="Port to use for benchmarking")
     parser.add_argument("-n", metavar=1000, type=int, default=100, help="Maximum number of requests to perform during a test")
-    parser.add_argument("-o", metavar="directory", type=str, default="results", help="Directory to output results to")
+    parser.add_argument("-o", metavar="results", type=str, default="results", help="Directory to output results to")
 
     args = parser.parse_args()
     ips = args.i.split()
@@ -130,9 +127,9 @@ if __name__ == "__main__":
     # Test sequentially
     print("Testing sequentially....")
     seq = benchmark_sequential_requests(ips)
-    seq.to_csv(os.path.join(out, f"{_get_file_id()}_seq.csv"), index_label="request")
+    seq.to_csv(os.path.join(out, f"{_get_current_datetime()}_{MAX_REQUESTS}_seq.csv"), index_label="request")
 
     # Test simultaneously
     print("Testing simultaneously....")
     sim = benchmark_simultaneous_requests(ips)
-    sim.to_csv(os.path.join(out, f"{_get_file_id()}_sim.csv"), index_label="request")
+    sim.to_csv(os.path.join(out, f"{_get_current_datetime()}_{MAX_REQUESTS}_sim.csv"), index_label="request")
