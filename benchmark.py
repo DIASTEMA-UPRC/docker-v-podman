@@ -8,7 +8,6 @@ import datetime
 from concurrent.futures import ThreadPoolExecutor, wait
 from typing import List
 
-
 TEST_IMAGE_PATH = "data/image.jpg"
 TEST_IMAGE = open(TEST_IMAGE_PATH, "rb")
 MAX_REQUESTS = 1000
@@ -126,10 +125,10 @@ if __name__ == "__main__":
 
     # Test sequentially
     print("Testing sequentially....")
-    seq = benchmark_sequential_requests(ips)
+    seq = benchmark_sequential_requests(ips, port)
     seq.to_csv(os.path.join(out, f"{_get_current_datetime()}_{MAX_REQUESTS}_seq.csv"), index_label="request")
 
     # Test simultaneously
     print("Testing simultaneously....")
-    sim = benchmark_simultaneous_requests(ips)
+    sim = benchmark_simultaneous_requests(ips, port)
     sim.to_csv(os.path.join(out, f"{_get_current_datetime()}_{MAX_REQUESTS}_sim.csv"), index_label="request")
